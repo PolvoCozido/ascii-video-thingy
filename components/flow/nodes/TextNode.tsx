@@ -3,6 +3,8 @@
 import type { NodeProps } from "@xyflow/react";
 import { useNodeUpdate } from "@/lib/flow/useNodeUpdate";
 import type { NodeData } from "@/lib/flow/types";
+import { copyText } from "@/lib/clipboard";
+import { CopyButton } from "./CopyButton";
 import { NodeShell } from "./NodeShell";
 
 const OUTPUTS = [{ name: "text", type: "text" as const }];
@@ -22,6 +24,9 @@ export function TextNode(props: NodeProps) {
         rows={3}
         className="nodrag w-full resize-none border border-[color:var(--color-rule)] bg-transparent p-2 text-[11px] leading-snug text-[color:var(--color-fg)] placeholder:text-[color:var(--color-muted)]/60 focus:border-[color:var(--color-ink)] focus:outline-none"
       />
+      <div className="mt-1 flex justify-end text-[9px] uppercase tracking-[0.16em]">
+        <CopyButton disabled={!cfg.text} onCopy={() => copyText(cfg.text)} />
+      </div>
     </NodeShell>
   );
 }

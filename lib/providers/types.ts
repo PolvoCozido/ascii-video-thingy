@@ -1,6 +1,6 @@
-export type ProviderId = "fal" | "replicate" | "openai";
+export type ProviderId = "fal" | "replicate" | "openai" | "xai" | "kling";
 
-export type Stage = "image" | "edit" | "video" | "chat";
+export type Stage = "image" | "video" | "chat";
 
 export type GenerationResult = {
   url: string;

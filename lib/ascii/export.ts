@@ -97,29 +97,63 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Render one shader frame of a still image and download it as a PNG. */
-export async function downloadAsciiImage(url: string, style: StyleState): Promise<void> {
-  const img = await loadImage(url);
-  const w = img.naturalWidth || 1024;
-  const h = img.naturalHeight || 1024;
+function loadVideoFrame(url: string): Promise<HTMLVideoElement> {
+  return new Promise((resolve, reject) => {
+    const v = document.createElement("video");
+    v.muted = true;
+    v.playsInline = true;
+    v.crossOrigin = "anonymous";
+    v.src = url;
+    // loadeddata guarantees the first frame is decoded and uploadable.
+    v.onloadeddata = () => resolve(v);
+    v.onerror = () => reject(new Error("video failed to load"));
+  });
+}
 
+/** Render a single shader frame of the given source at native resolution. */
+function renderSourceToBlob(
+  source: TexImageSource,
+  w: number,
+  h: number,
+  style: StyleState,
+): Promise<Blob> {
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
   const bundle = setupGL(canvas);
   try {
-    uploadFrame(bundle, img);
+    uploadFrame(bundle, source);
     setStyleUniforms(bundle.gl, bundle.u, style, w, h, w, h, 0, 1);
     bundle.gl.drawArrays(bundle.gl.TRIANGLES, 0, 6);
-
-    const blob = await new Promise<Blob | null>((res) =>
-      canvas.toBlob(res, "image/png"),
+    return new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob null"))), "image/png"),
     );
-    if (!blob) throw new Error("canvas.toBlob returned null");
-    triggerDownload(blob, `ascii-${Date.now()}.png`);
   } finally {
     bundle.dispose();
   }
+}
+
+/**
+ * Render one ASCII frame (still image, or the first frame of a video) and
+ * return it as a PNG blob — used for both downloading and clipboard copy.
+ */
+export async function renderAsciiSnapshotBlob(
+  url: string,
+  mediaType: "image" | "video",
+  style: StyleState,
+): Promise<Blob> {
+  if (mediaType === "video") {
+    const v = await loadVideoFrame(url);
+    return renderSourceToBlob(v, v.videoWidth || 1280, v.videoHeight || 720, style);
+  }
+  const img = await loadImage(url);
+  return renderSourceToBlob(img, img.naturalWidth || 1024, img.naturalHeight || 1024, style);
+}
+
+/** Render one shader frame of a still image and download it as a PNG. */
+export async function downloadAsciiImage(url: string, style: StyleState): Promise<void> {
+  const blob = await renderAsciiSnapshotBlob(url, "image", style);
+  triggerDownload(blob, `ascii-${Date.now()}.png`);
 }
 
 function pickMime(): string {

@@ -11,14 +11,12 @@ export type KeysMap = Partial<Record<ProviderId, string>>;
 export type PickMap = {
   // for each stage, which provider + model to use
   image: { provider: ProviderId; model: string };
-  edit: { provider: ProviderId; model: string };
   video: { provider: ProviderId; model: string };
   chat: { provider: ProviderId; model: string };
 };
 
 export const DEFAULT_PICKS: PickMap = {
   image: { provider: "openai", model: "gpt-image-1" },
-  edit: { provider: "openai", model: "gpt-image-1" },
   video: { provider: "fal", model: "fal-ai/bytedance/seedance/v1/pro/image-to-video" },
   chat: { provider: "openai", model: "gpt-4o-mini" },
 };

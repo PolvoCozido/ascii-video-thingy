@@ -19,7 +19,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { runFlow, type FlowEdge, type FlowNode } from "@/lib/flow/engine";
+import { effectiveInputs, effectiveOutputs, runFlow, type FlowEdge, type FlowNode } from "@/lib/flow/engine";
 import { setRunFromNodeHandler } from "@/lib/flow/control";
 import { seedGraph } from "@/lib/flow/seed";
 import { getSpec } from "@/lib/models/registry";
@@ -28,6 +28,8 @@ import type { FlowNodeKind, NodeData } from "@/lib/flow/types";
 import { STYLE_DEFAULTS } from "@/lib/style";
 import { readPicksSync } from "@/lib/keys";
 import { SettingsDrawer, useSettingsToggle } from "../SettingsDrawer";
+import { LibraryDrawer } from "./LibraryDrawer";
+import { pushLibraryEntry, useLibrary, useLibraryToggle } from "@/lib/library";
 import { TextNode } from "./nodes/TextNode";
 import { PromptNode } from "./nodes/PromptNode";
 import { UploadNode } from "./nodes/UploadNode";
@@ -38,9 +40,6 @@ import { DEFAULT_PROMPT_CONTEXT } from "@/lib/flow/types";
 function ImageGenNodeAdapter(props: NodeProps) {
   return <ProviderNode {...props} kind="imageGen" />;
 }
-function EditNodeAdapter(props: NodeProps) {
-  return <ProviderNode {...props} kind="edit" />;
-}
 function VideoGenNodeAdapter(props: NodeProps) {
   return <ProviderNode {...props} kind="videoGen" />;
 }
@@ -50,12 +49,11 @@ const NODE_TYPES: NodeTypes = {
   prompt: PromptNode,
   upload: UploadNode,
   imageGen: ImageGenNodeAdapter,
-  edit: EditNodeAdapter,
   videoGen: VideoGenNodeAdapter,
   ascii: AsciiNode,
 };
 
-const STORAGE_KEY = "ascii-video-thingy:flow:v3";
+const STORAGE_KEY = "ascii-video-thingy:flow:v4";
 
 function loadSaved(): { nodes: FlowNode[]; edges: FlowEdge[] } | null {
   if (typeof window === "undefined") return null;
@@ -69,23 +67,47 @@ function loadSaved(): { nodes: FlowNode[]; edges: FlowEdge[] } | null {
   }
 }
 
+/**
+ * Drop edges whose source/target handles no longer exist on their nodes.
+ * This happens when a model spec is renamed or its inputs change between
+ * versions — e.g. a Kling v1 i2v node had `image_tail`, user switched to v2.
+ */
+function pruneOrphanEdges(nodes: FlowNode[], edges: FlowEdge[]): FlowEdge[] {
+  const inByNode = new Map<string, Set<string>>();
+  const outByNode = new Map<string, Set<string>>();
+  for (const n of nodes) {
+    const cfg = (n.data as unknown as NodeData).config;
+    inByNode.set(n.id, new Set(effectiveInputs(cfg)));
+    outByNode.set(n.id, new Set(effectiveOutputs(cfg)));
+  }
+  return edges.filter((e) => {
+    if (e.targetHandle && !inByNode.get(e.target)?.has(e.targetHandle)) return false;
+    if (e.sourceHandle && !outByNode.get(e.source)?.has(e.sourceHandle)) return false;
+    return true;
+  });
+}
+
 function persist(nodes: FlowNode[], edges: FlowEdge[]) {
   if (typeof window === "undefined") return;
   try {
-    // strip runtime fields before saving so old errors don't persist
-    const cleanNodes = nodes.map((n) => ({
-      ...n,
-      data: {
-        ...n.data,
-        status: "idle" as const,
-        error: undefined,
-        // keep upload outputs (they reference blob: or /sample.mp4), drop AI outputs
-        output:
-          n.type === "upload"
-            ? (n.data as unknown as NodeData).output
-            : undefined,
-      },
-    }));
+    // strip transient runtime fields, but keep `output` so generated media
+    // survives a reload — preview re-renders from the cached URL instead of
+    // forcing the user to re-run the whole flow.
+    const cleanNodes = nodes.map((n) => {
+      const d = n.data as unknown as NodeData;
+      // Don't persist blob: URLs — they don't survive a navigation.
+      const isBlobOutput =
+        d.output?.media?.url?.startsWith("blob:") ?? false;
+      return {
+        ...n,
+        data: {
+          ...d,
+          status: d.output ? ("done" as const) : ("idle" as const),
+          error: undefined,
+          output: isBlobOutput ? undefined : d.output,
+        },
+      };
+    });
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ nodes: cleanNodes, edges }));
   } catch {
     // ignore
@@ -95,15 +117,30 @@ function persist(nodes: FlowNode[], edges: FlowEdge[]) {
 export function FlowEditor() {
   return (
     <ReactFlowProvider>
-      <FlowEditorInner />
+      <ClientOnly>
+        <FlowEditorInner />
+      </ClientOnly>
     </ReactFlowProvider>
   );
+}
+
+/**
+ * Renders children only after the component has mounted on the client.
+ * FlowEditorInner reads localStorage during init (loadSaved / readPicksSync),
+ * which on the server returns defaults but on the client returns saved state —
+ * a hydration mismatch. Deferring the entire subtree to post-mount avoids it.
+ */
+function ClientOnly({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return mounted ? <>{children}</> : null;
 }
 
 function FlowEditorInner() {
   const seedRef = useRef<{ nodes: FlowNode[]; edges: FlowEdge[] } | null>(null);
   if (seedRef.current === null) {
-    seedRef.current = loadSaved() ?? seedGraph();
+    const raw = loadSaved() ?? seedGraph();
+    seedRef.current = { nodes: raw.nodes, edges: pruneOrphanEdges(raw.nodes, raw.edges) };
   }
   const seed = seedRef.current;
 
@@ -113,6 +150,8 @@ function FlowEditorInner() {
   const [scissor, setScissor] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const { isOpen, toggle } = useSettingsToggle();
+  const { isOpen: libOpen, toggle: toggleLib } = useLibraryToggle();
+  const library = useLibrary();
 
   // persist on change
   useEffect(() => {
@@ -179,6 +218,16 @@ function FlowEditorInner() {
               updateNodeRuntime(evt.nodeId, { status: "running", error: undefined });
             } else if (evt.type === "done") {
               updateNodeRuntime(evt.nodeId, { status: "done", output: evt.output, error: undefined });
+              if (evt.output.media) {
+                const md = evt.cfg as { provider?: string; model?: string };
+                pushLibraryEntry({
+                  url: evt.output.media.url,
+                  mediaType: evt.output.media.mediaType,
+                  provider: md.provider,
+                  model: md.model,
+                  prompt: evt.inputs.prompt ?? evt.inputs.text,
+                });
+              }
             } else if (evt.type === "error") {
               updateNodeRuntime(evt.nodeId, { status: "error", error: evt.error });
             } else if (evt.type === "skip") {
@@ -264,14 +313,6 @@ function FlowEditorInner() {
           };
           break;
         }
-        case "edit": {
-          const { params } = specOf(picks.edit);
-          data = {
-            config: { kind: "edit", provider: picks.edit.provider, model: picks.edit.model, params },
-            status: "idle",
-          };
-          break;
-        }
         case "videoGen": {
           const { params } = specOf(picks.video);
           data = {
@@ -337,6 +378,13 @@ function FlowEditorInner() {
           </button>
           <button
             type="button"
+            onClick={toggleLib}
+            className="border border-[color:var(--color-rule)] px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-muted)] hover:border-[color:var(--color-ink)] hover:text-[color:var(--color-ink)]"
+          >
+            [⊞ library {library.length}]
+          </button>
+          <button
+            type="button"
             onClick={toggle}
             className="border border-[color:var(--color-rule)] px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-muted)] hover:border-[color:var(--color-ink)] hover:text-[color:var(--color-ink)]"
           >
@@ -384,6 +432,7 @@ function FlowEditorInner() {
       </div>
 
       {isOpen && <SettingsDrawer />}
+      {libOpen && <LibraryDrawer />}
     </div>
   );
 }
@@ -395,7 +444,6 @@ function AddMenu({ onAdd }: { onAdd: (kind: FlowNodeKind) => void }) {
     { kind: "prompt", label: "prompt (llm)" },
     { kind: "upload", label: "upload" },
     { kind: "imageGen", label: "image gen" },
-    { kind: "edit", label: "image edit" },
     { kind: "videoGen", label: "video gen" },
     { kind: "ascii", label: "ascii" },
   ];

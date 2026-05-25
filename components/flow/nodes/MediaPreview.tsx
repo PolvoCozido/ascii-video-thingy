@@ -3,23 +3,19 @@
 import type { MediaValue } from "@/lib/flow/types";
 
 /**
- * Inline thumbnail of a node's media — the generated image/video (or an
- * uploaded file). Click opens the original in a new tab. `object-contain`
- * keeps both portrait and landscape results fully visible.
+ * Inline preview of a node's media. Videos render as a real player (controls +
+ * autoplay-loop) so they can be scrubbed in place; images render as a thumbnail.
+ * A small corner link opens the source in a new tab for both. `object-contain`
+ * keeps portrait and landscape results fully visible.
  */
 export function MediaPreview({ media, label }: { media: MediaValue; label?: string }) {
   return (
-    <a
-      href={media.url}
-      target="_blank"
-      rel="noreferrer"
-      title="open original in a new tab"
-      className="nodrag group relative block w-full overflow-hidden border border-[color:var(--color-rule)] bg-black"
-    >
+    <div className="group relative w-full overflow-hidden border border-[color:var(--color-rule)] bg-black">
       {media.mediaType === "video" ? (
         <video
           src={media.url}
-          className="block max-h-44 w-full object-contain"
+          className="nodrag block max-h-44 w-full object-contain"
+          controls
           muted
           loop
           autoPlay
@@ -29,9 +25,17 @@ export function MediaPreview({ media, label }: { media: MediaValue; label?: stri
         // eslint-disable-next-line @next/next/no-img-element -- remote provider URLs, no Image optimization wanted
         <img src={media.url} alt={label ?? "result"} className="block max-h-44 w-full object-contain" />
       )}
-      <span className="pointer-events-none absolute right-1 top-1 bg-[color:var(--color-bg)]/70 px-1 text-[7px] uppercase tracking-[0.16em] text-[color:var(--color-muted)] opacity-0 transition group-hover:opacity-100">
-        ↗ {media.mediaType}
-      </span>
-    </a>
+      <button
+        type="button"
+        title="open original in a new tab"
+        onClick={(e) => {
+          e.stopPropagation();
+          window.open(media.url, "_blank", "noreferrer");
+        }}
+        className="nodrag absolute right-1 top-1 z-10 bg-[color:var(--color-bg)]/70 px-1 text-[7px] uppercase tracking-[0.16em] text-[color:var(--color-muted)] opacity-0 transition hover:text-[color:var(--color-ink)] group-hover:opacity-100"
+      >
+        ↗ open
+      </button>
+    </div>
   );
 }

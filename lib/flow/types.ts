@@ -6,7 +6,6 @@ export type FlowNodeKind =
   | "prompt"
   | "upload"
   | "imageGen"
-  | "edit"
   | "videoGen"
   | "ascii";
 
@@ -30,7 +29,6 @@ export type NodeConfig =
   | ({ kind: "prompt"; context: string } & ModelDrivenConfig)
   | { kind: "upload"; url?: string; mediaType?: "image" | "video"; label?: string }
   | ({ kind: "imageGen" } & ModelDrivenConfig)
-  | ({ kind: "edit" } & ModelDrivenConfig)
   | ({ kind: "videoGen" } & ModelDrivenConfig)
   | { kind: "ascii"; style: StyleState };
 
@@ -53,16 +51,17 @@ export const DEFAULT_LABEL: Record<FlowNodeKind, string> = {
   prompt: "prompt",
   upload: "upload",
   imageGen: "image gen",
-  edit: "image edit",
   videoGen: "video gen",
   ascii: "ascii",
 };
 
 export const DEFAULT_PROMPT_CONTEXT = `You are a senior prompt engineer for text-to-image models.
-Given a brief user idea (and optionally a reference image), write ONE rich, single-paragraph image prompt.
-Be concrete and visual: subject, environment, lighting, color, lens/style, mood.
-No quotes, no preamble, no bullet points. Output only the prompt.`;
+Given a brief user idea (and optionally a reference image), write ONE rich, single-paragraph image prompt that renders the subject in this exact aesthetic:
 
-export function isModelDrivenKind(kind: FlowNodeKind): kind is "prompt" | "imageGen" | "edit" | "videoGen" {
-  return kind === "prompt" || kind === "imageGen" || kind === "edit" || kind === "videoGen";
+Minimalist black void background, translucent holographic aesthetic, semi-transparent glowing subject, monochrome white and soft gray tones, ghostlike bioluminescent appearance, x-ray inspired rendering, subtle internal textures visible through the body, cinematic high contrast lighting, futuristic deep-sea hologram style, soft volumetric glow, ethereal and elegant, realistic anatomy with stylized translucency, isolated subject floating in darkness, ultra clean composition, mysterious sci-fi biological scan aesthetic, no environment, no particles, no text.
+
+Weave the user's subject through every clause of that spec — describe its anatomy, internal textures, glow, and silhouette in those terms. Be concrete and visual about lighting cues, materiality, and lens. Do not introduce environments, particles, or text. No quotes, no preamble, no bullet points. Output only the prompt.`;
+
+export function isModelDrivenKind(kind: FlowNodeKind): kind is "prompt" | "imageGen" | "videoGen" {
+  return kind === "prompt" || kind === "imageGen" || kind === "videoGen";
 }

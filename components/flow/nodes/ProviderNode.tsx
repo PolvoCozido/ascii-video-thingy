@@ -6,14 +6,16 @@ import { useModelChange } from "@/lib/flow/useModelChange";
 import type { NodeData } from "@/lib/flow/types";
 import { getSpec, specsForKind } from "@/lib/models/registry";
 import type { ProviderId } from "@/lib/providers/types";
+import { copyImageFromUrl, copyText } from "@/lib/clipboard";
 import { ConfigFields } from "./ConfigFields";
+import { CopyButton } from "./CopyButton";
 import { MediaPreview } from "./MediaPreview";
 import { NodeShell, type ShellPort } from "./NodeShell";
+import { Working } from "./Working";
 
-type Kind = "imageGen" | "edit" | "videoGen";
+type Kind = "imageGen" | "videoGen";
 const LABELS: Record<Kind, string> = {
   imageGen: "image gen",
-  edit: "image edit",
   videoGen: "video gen",
 };
 
@@ -73,7 +75,22 @@ export function ProviderNode(props: NodeProps & { kind: Kind }) {
           />
         )}
 
-        {d.output?.media && <MediaPreview media={d.output.media} label={cfg.model} />}
+        {d.status === "running" && <Working label={kind === "videoGen" ? "rendering" : "generating"} media />}
+
+        {d.status !== "running" && d.output?.media && (
+          <div className="flex flex-col gap-1">
+            <MediaPreview media={d.output.media} label={cfg.model} />
+            <div className="flex justify-end text-[9px] uppercase tracking-[0.16em]">
+              <CopyButton
+                onCopy={() =>
+                  d.output!.media!.mediaType === "image"
+                    ? copyImageFromUrl(d.output!.media!.url)
+                    : copyText(d.output!.media!.url).then(() => "url")
+                }
+              />
+            </div>
+          </div>
+        )}
 
         {d.error && (
           <p className="line-clamp-2 text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-rec)]">

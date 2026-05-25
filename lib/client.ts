@@ -9,8 +9,10 @@ export function proxify(url: string): string {
   return `/api/proxy?url=${encodeURIComponent(url)}`;
 }
 
-export async function blobUrlToDataUrl(blobUrl: string): Promise<string> {
-  const res = await fetch(blobUrl);
+/** Fetch any URL the browser can reach and return it as a base64 data: URL. */
+export async function fetchAsDataUrl(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`failed to load media input (${res.status})`);
   const blob = await res.blob();
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -20,13 +22,28 @@ export async function blobUrlToDataUrl(blobUrl: string): Promise<string> {
   });
 }
 
-// Walk a payload object and convert any blob: URLs to data: URLs (server can't fetch blob:).
+export const blobUrlToDataUrl = fetchAsDataUrl;
+
+/**
+ * Resolve media inputs to base64 data: URLs before sending to the server.
+ * Upstream image/video outputs are stored as proxied, *relative* URLs
+ * (`/api/proxy?url=…`) for in-app display — but external providers (Kling, fal
+ * img2img, …) can't fetch a relative URL, so they must receive the bytes inline.
+ * The browser can read our own proxy same-origin, so we convert here.
+ */
 async function preparePayload(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = { ...payload };
   for (const k of Object.keys(out)) {
+    if (k.startsWith("__")) continue; // private control fields (e.g. __endpoint)
     const v = out[k];
-    if (typeof v === "string" && v.startsWith("blob:")) {
-      out[k] = await blobUrlToDataUrl(v);
+    if (typeof v !== "string") continue;
+    if (v.startsWith("data:")) continue; // already inline
+    if (v.startsWith("blob:") || v.startsWith("/")) {
+      // blob: (local upload) or relative proxy/static URL — fetch same-origin.
+      out[k] = await fetchAsDataUrl(v);
+    } else if (v.startsWith("http://") || v.startsWith("https://")) {
+      // absolute remote URL — route through the proxy to dodge CORS.
+      out[k] = await fetchAsDataUrl(proxify(v));
     }
   }
   return out;

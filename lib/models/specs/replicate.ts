@@ -8,12 +8,14 @@ const fluxSchnellRep: ModelSpec = {
   description: "Replicate / black-forest-labs",
   inputs: [{ name: "prompt", type: "text", required: true }],
   config: [
-    { name: "aspect_ratio", type: "enum", options: ["1:1", "16:9", "9:16", "4:3", "3:4"], default: "1:1" },
+    { name: "aspect_ratio", type: "enum", options: ["1:1", "16:9", "21:9", "3:2", "2:3", "4:5", "5:4", "3:4", "4:3", "9:16", "9:21"], default: "1:1" },
+    { name: "output_format", label: "format", type: "enum", options: ["webp", "jpg", "png"], default: "webp" },
     { name: "num_outputs", type: "number", min: 1, max: 4, step: 1, default: 1 },
   ],
   buildPayload: ({ inputs, config }) => ({
     prompt: inputs.prompt,
     aspect_ratio: config.aspect_ratio,
+    output_format: config.output_format,
     num_outputs: config.num_outputs,
   }),
 };
@@ -29,7 +31,7 @@ const seedanceProRep: ModelSpec = {
   ],
   config: [
     { name: "duration", type: "enum", options: [{ value: 5, label: "5s" }, { value: 10, label: "10s" }], default: 5 },
-    { name: "resolution", type: "enum", options: ["480p", "720p", "1080p"], default: "720p" },
+    { name: "resolution", type: "enum", options: ["480p", "1080p"], default: "1080p" },
     { name: "aspect_ratio", type: "enum", options: ["16:9", "9:16", "1:1"], default: "16:9" },
   ],
   buildPayload: ({ inputs, config }) => {

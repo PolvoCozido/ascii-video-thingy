@@ -21,7 +21,7 @@ function dataOf(n: FlowNode): NodeData {
 
 export type RunEvent =
   | { type: "start"; nodeId: string }
-  | { type: "done"; nodeId: string; output: NonNullable<NodeData["output"]> }
+  | { type: "done"; nodeId: string; output: NonNullable<NodeData["output"]>; inputs: Record<string, string | undefined>; cfg: NodeConfig }
   | { type: "error"; nodeId: string; error: string }
   | { type: "skip"; nodeId: string; reason: string };
 
@@ -130,14 +130,10 @@ async function runNode(
     case "ascii": {
       const inputUrl = inputs.media;
       if (!inputUrl) throw new Error("ascii needs a media input");
-      // mediaType for ascii pass-through is unknown — best effort by extension
-      const ext = inputUrl.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
-      const mediaType: "image" | "video" = ["mp4", "webm", "mov"].includes(ext) ? "video" : "image";
-      return { media: { url: inputUrl, mediaType } };
+      return { media: { url: inputUrl, mediaType: guessMediaType(inputUrl) } };
     }
     case "prompt":
     case "imageGen":
-    case "edit":
     case "videoGen": {
       return runModelDriven(cfg, inputs, signal);
     }
@@ -145,7 +141,7 @@ async function runNode(
 }
 
 async function runModelDriven(
-  cfg: Extract<NodeConfig, { kind: "prompt" | "imageGen" | "edit" | "videoGen" }>,
+  cfg: Extract<NodeConfig, { kind: "prompt" | "imageGen" | "videoGen" }>,
   inputs: Record<string, string | undefined>,
   signal?: AbortSignal,
 ): Promise<NonNullable<NodeData["output"]>> {
@@ -232,11 +228,31 @@ export async function runFlow(
     try {
       const output = await runNode(cfg, inputs, signal);
       outputs.set(id, output);
-      onEvent({ type: "done", nodeId: id, output });
+      onEvent({ type: "done", nodeId: id, output, inputs, cfg });
     } catch (err) {
       onEvent({ type: "error", nodeId: id, error: (err as Error).message });
     }
   }
+}
+
+/**
+ * Best-effort media type from a URL's file extension. If the URL is wrapped in
+ * our same-origin proxy (`/api/proxy?url=...`), unwrap to look at the original.
+ * Falls back to "image" — preview will fail loudly if a video is misclassified.
+ */
+function guessMediaType(url: string): "image" | "video" {
+  let real = url;
+  if (url.startsWith("/api/proxy?")) {
+    try {
+      const params = new URL(url, "http://x").searchParams;
+      const inner = params.get("url");
+      if (inner) real = inner;
+    } catch {
+      // fall back to the wrapped URL
+    }
+  }
+  const ext = real.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+  return ["mp4", "webm", "mov", "m4v"].includes(ext) ? "video" : "image";
 }
 
 function requiredInputNames(cfg: NodeConfig): string[] {

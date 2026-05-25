@@ -8,14 +8,19 @@ const gptImage1: ModelSpec = {
   description: "OpenAI image generation",
   inputs: [{ name: "prompt", type: "text", required: true }],
   config: [
-    { name: "size", type: "enum", options: ["1024x1024", "1024x1536", "1536x1024"], default: "1024x1024" },
+    { name: "size", type: "enum", options: ["1024x1024", "1024x1536", "1536x1024", "auto"], default: "auto" },
+    { name: "output_format", label: "format", type: "enum", options: ["png", "jpeg", "webp"], default: "png" },
     { name: "quality", type: "enum", options: ["low", "medium", "high", "auto"], default: "auto" },
+    { name: "background", type: "enum", options: ["auto", "transparent", "opaque"], default: "auto" },
+    { name: "n", type: "number", min: 1, max: 10, step: 1, default: 1 },
   ],
   buildPayload: ({ inputs, config }) => ({
     prompt: inputs.prompt,
     size: config.size,
+    output_format: config.output_format,
     quality: config.quality,
-    n: 1,
+    background: config.background,
+    n: config.n ?? 1,
   }),
 };
 
@@ -31,11 +36,13 @@ const gptImage1Edit: ModelSpec = {
   ],
   config: [
     { name: "size", type: "enum", options: ["1024x1024", "1024x1536", "1536x1024"], default: "1024x1024" },
+    { name: "output_format", label: "format", type: "enum", options: ["png", "jpeg", "webp"], default: "png" },
   ],
   buildPayload: ({ inputs, config }) => ({
     prompt: inputs.prompt,
     image: inputs.image,
     size: config.size,
+    output_format: config.output_format,
     // The openai edit endpoint uses multipart — the adapter unpacks `image` as a file.
   }),
 };
@@ -54,7 +61,8 @@ function chatSpec(modelId: string, label: string, vision: boolean): ModelSpec {
     config: [
       { name: "system", type: "text", default: "", placeholder: "system prompt (overrides node context if set)" },
       { name: "temperature", type: "number", min: 0, max: 2, step: 0.05, default: 0.7 },
-      { name: "max_tokens", type: "number", min: 16, max: 4096, step: 16, default: 512 },
+      // OpenAI deprecated `max_tokens` for chat completions in favor of `max_completion_tokens`.
+      { name: "max_completion_tokens", label: "max tokens", type: "number", min: 16, max: 16384, step: 16, default: 1024 },
     ],
     buildPayload: ({ inputs, config }) => {
       const userContent: Array<Record<string, unknown>> = [{ type: "text", text: inputs.text }];
@@ -69,7 +77,7 @@ function chatSpec(modelId: string, label: string, vision: boolean): ModelSpec {
         model: modelId,
         messages,
         temperature: config.temperature,
-        max_tokens: config.max_tokens,
+        max_completion_tokens: config.max_completion_tokens,
       };
     },
   };

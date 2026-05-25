@@ -7,8 +7,11 @@ import { useModelChange } from "@/lib/flow/useModelChange";
 import type { NodeData } from "@/lib/flow/types";
 import { getSpec, specsForKind } from "@/lib/models/registry";
 import type { ProviderId } from "@/lib/providers/types";
+import { copyText } from "@/lib/clipboard";
 import { ConfigFields } from "./ConfigFields";
+import { CopyButton } from "./CopyButton";
 import { NodeShell, type ShellPort } from "./NodeShell";
+import { Working } from "./Working";
 
 export function PromptNode(props: NodeProps) {
   const { id, data, selected } = props;
@@ -77,10 +80,17 @@ export function PromptNode(props: NodeProps) {
           />
         )}
 
-        {d.output?.text && (
-          <p className="line-clamp-3 border-l-2 border-[color:var(--color-ink)] bg-[color:var(--color-ink)]/5 px-2 py-1 text-[10px] leading-snug text-[color:var(--color-fg)]">
-            {d.output.text}
-          </p>
+        {d.status === "running" && <Working label="thinking" />}
+
+        {d.status !== "running" && d.output?.text && (
+          <div className="flex flex-col gap-1">
+            <p className="line-clamp-3 border-l-2 border-[color:var(--color-ink)] bg-[color:var(--color-ink)]/5 px-2 py-1 text-[10px] leading-snug text-[color:var(--color-fg)]">
+              {d.output.text}
+            </p>
+            <div className="flex justify-end text-[9px] uppercase tracking-[0.16em]">
+              <CopyButton onCopy={() => copyText(d.output!.text!)} />
+            </div>
+          </div>
         )}
         {d.error && (
           <p className="line-clamp-2 text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-rec)]">

@@ -3,10 +3,12 @@
 import type { NodeProps } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FRAG_SRC, VERT_SRC, getUniformLocs, linkProgram, setStyleUniforms } from "@/lib/shader";
-import { downloadAsciiImage, recordAsciiVideoLoop, type VideoRecordController } from "@/lib/ascii/export";
+import { downloadAsciiImage, recordAsciiVideoLoop, renderAsciiSnapshotBlob, type VideoRecordController } from "@/lib/ascii/export";
 import { STYLE_DEFAULTS, type StyleState } from "@/lib/style";
+import { copyImageBlob } from "@/lib/clipboard";
 import { useNodeUpdate } from "@/lib/flow/useNodeUpdate";
 import type { NodeData } from "@/lib/flow/types";
+import { CopyButton } from "./CopyButton";
 import { NodeShell } from "./NodeShell";
 
 export function AsciiNode(props: NodeProps) {
@@ -41,15 +43,23 @@ export function AsciiNode(props: NodeProps) {
               </div>
             )}
           </div>
-          <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.16em] text-[color:var(--color-muted)]">
-            <span>px {cfg.style.pixel} · gm {cfg.style.gamma.toFixed(1)}</span>
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-1 text-[9px] uppercase tracking-[0.16em] text-[color:var(--color-muted)]">
+            <span className="whitespace-nowrap">px {cfg.style.pixel} · gm {cfg.style.gamma.toFixed(1)}</span>
+            <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+              <CopyButton
+                idleLabel="[⎘]"
+                disabled={!sourceUrl}
+                onCopy={async () => {
+                  const blob = await renderAsciiSnapshotBlob(sourceUrl!, sourceType ?? "image", cfg.style);
+                  await copyImageBlob(blob);
+                }}
+              />
               <SaveButton state={download} />
               <button
                 type="button"
                 onClick={() => setExpanded(true)}
                 disabled={!sourceUrl}
-                className="nodrag text-[color:var(--color-muted)] hover:text-[color:var(--color-ink)] disabled:opacity-40"
+                className="nodrag whitespace-nowrap text-[color:var(--color-muted)] hover:text-[color:var(--color-ink)] disabled:opacity-40"
               >
                 [expand]
               </button>
@@ -153,8 +163,12 @@ function StyleMini({ style, onChange }: { style: StyleState; onChange: (p: Parti
   return (
     <div className="nodrag mt-1 flex flex-col gap-1 border-t border-[color:var(--color-rule)] pt-1.5">
       <MiniSlider label="pixel"   value={style.pixel}   min={1}   max={10}  step={1}    digits={0} onChange={(v) => onChange({ pixel: v })} />
+      <MiniSlider label="black"   value={style.black}   min={0}   max={0.7} step={0.01} digits={2} onChange={(v) => onChange({ black: v })} />
+      <MiniSlider label="white"   value={style.white}   min={0.2} max={1.5} step={0.01} digits={2} onChange={(v) => onChange({ white: v })} />
+      <MiniSlider label="density" value={style.density} min={0.1} max={1.0} step={0.01} digits={2} onChange={(v) => onChange({ density: v })} />
       <MiniSlider label="gamma"   value={style.gamma}   min={0.3} max={2.5} step={0.05} digits={2} onChange={(v) => onChange({ gamma: v })} />
       <MiniSlider label="shimmer" value={style.shimmer} min={0}   max={2}   step={0.05} digits={2} onChange={(v) => onChange({ shimmer: v })} />
+      <MiniSlider label="drift"   value={style.drift}   min={0}   max={3}   step={0.05} digits={2} onChange={(v) => onChange({ drift: v })} />
       <div className="flex items-center gap-2 pt-0.5 text-[9px] uppercase tracking-[0.14em]">
         <span className="w-14 flex-shrink-0 text-[color:var(--color-muted)]">ink/bg</span>
         <input
@@ -307,16 +321,19 @@ function MiniAsciiCanvas({
     const u = getUniformLocs(gl, prog);
     gl.uniform1i(u.tex, 0);
 
-    const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    // Render at the SOURCE's native resolution (matching the exporter) so the
+    // dither pattern, gamma, etc. are pixel-identical to the downloaded file.
+    // The canvas is then CSS-scaled to fit its container via object-contain.
+    let lastW = 0;
+    let lastH = 0;
+    const ensureSize = (w: number, h: number) => {
+      if (w === lastW && h === lastH) return;
+      canvas.width = Math.max(1, w);
+      canvas.height = Math.max(1, h);
       gl.viewport(0, 0, canvas.width, canvas.height);
+      lastW = w;
+      lastH = h;
     };
-    resize();
-    const ro = new ResizeObserver(resize);
-    ro.observe(canvas);
 
     const t0 = performance.now();
     let raf = 0;
@@ -327,26 +344,31 @@ function MiniAsciiCanvas({
       const v = videoRef.current;
       const i = imgRef.current;
       if (v && v.readyState >= 2) {
+        srcW = v.videoWidth || srcW; srcH = v.videoHeight || srcH;
+        ensureSize(srcW, srcH);
         try {
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D, tex);
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, v);
         } catch (err) { console.error("video upload failed", err); }
-        srcW = v.videoWidth || srcW; srcH = v.videoHeight || srcH;
-      } else if (i && imgPendingRef.current) {
-        try {
-          gl.activeTexture(gl.TEXTURE0);
-          gl.bindTexture(gl.TEXTURE_2D, tex);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, i);
-          imgPendingRef.current = false;
-        } catch (err) {
-          console.error("image upload failed", err);
-          imgPendingRef.current = false;
+      } else if (i) {
+        srcW = i.naturalWidth || srcW; srcH = i.naturalHeight || srcH;
+        ensureSize(srcW, srcH);
+        if (imgPendingRef.current) {
+          try {
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, i);
+            imgPendingRef.current = false;
+          } catch (err) {
+            console.error("image upload failed", err);
+            imgPendingRef.current = false;
+          }
         }
       }
-      if (i) { srcW = i.naturalWidth || srcW; srcH = i.naturalHeight || srcH; }
 
-      setStyleUniforms(gl, u, s, canvas.width, canvas.height, srcW, srcH, t, window.devicePixelRatio || 1);
+      // pixelScale = 1 to match the exporter — see lib/ascii/export.ts.
+      setStyleUniforms(gl, u, s, canvas.width, canvas.height, srcW, srcH, t, 1);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       raf = requestAnimationFrame(loop);
     };
@@ -354,12 +376,11 @@ function MiniAsciiCanvas({
 
     return () => {
       cancelAnimationFrame(raf);
-      ro.disconnect();
       gl.deleteTexture(tex);
       gl.deleteBuffer(quad);
       gl.deleteProgram(prog);
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="block h-full w-full" />;
+  return <canvas ref={canvasRef} className="block h-full w-full object-contain" />;
 }

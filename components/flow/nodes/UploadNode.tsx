@@ -4,6 +4,8 @@ import type { NodeProps } from "@xyflow/react";
 import { useReactFlow } from "@xyflow/react";
 import { useNodeUpdate } from "@/lib/flow/useNodeUpdate";
 import type { NodeData } from "@/lib/flow/types";
+import { copyImageFromUrl, copyText } from "@/lib/clipboard";
+import { CopyButton } from "./CopyButton";
 import { MediaPreview } from "./MediaPreview";
 import { NodeShell } from "./NodeShell";
 
@@ -59,8 +61,17 @@ export function UploadNode(props: NodeProps) {
         />
       </label>
       {cfg.url && cfg.mediaType && (
-        <div className="mt-1.5">
+        <div className="mt-1.5 flex flex-col gap-1">
           <MediaPreview media={{ url: cfg.url, mediaType: cfg.mediaType }} label={cfg.label} />
+          <div className="flex justify-end text-[9px] uppercase tracking-[0.16em]">
+            <CopyButton
+              onCopy={() =>
+                cfg.mediaType === "image"
+                  ? copyImageFromUrl(cfg.url!)
+                  : copyText(cfg.url!).then(() => "url")
+              }
+            />
+          </div>
         </div>
       )}
     </NodeShell>

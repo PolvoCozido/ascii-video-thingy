@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProvider, type ProviderError } from "@/lib/providers";
 
-const ALLOWED_PROVIDERS = new Set(["fal", "replicate", "openai"]);
+const ALLOWED_PROVIDERS = new Set(["fal", "replicate", "openai", "xai", "kling"]);
 
 type MediaBody = { provider?: string; modelId?: string; payload?: Record<string, unknown> };
 

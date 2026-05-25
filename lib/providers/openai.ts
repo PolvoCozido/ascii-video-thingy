@@ -48,6 +48,7 @@ async function edits(payload: Record<string, unknown>, apiKey: string, signal?: 
   form.append("model", "gpt-image-1");
   form.append("prompt", String(payload.prompt ?? ""));
   if (payload.size) form.append("size", String(payload.size));
+  if (payload.output_format) form.append("output_format", String(payload.output_format));
   form.append("image", new Blob([buffer], { type }), "input.png");
 
   const res = await fetch(`${BASE}/images/edits`, {
