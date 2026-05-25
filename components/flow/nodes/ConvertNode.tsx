@@ -43,7 +43,7 @@ export function ConvertNode(props: NodeProps) {
         )}
         {media ? (
           <>
-            <MediaPreview media={media} label="mp4" />
+            <MediaPreview media={media} label="mp4" pixelated />
             <div className="flex justify-end text-[9px] uppercase tracking-[0.16em]">
               <button
                 type="button"

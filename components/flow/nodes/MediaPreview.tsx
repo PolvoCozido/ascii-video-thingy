@@ -8,13 +8,23 @@ import type { MediaValue } from "@/lib/flow/types";
  * A small corner link opens the source in a new tab for both. `object-contain`
  * keeps portrait and landscape results fully visible.
  */
-export function MediaPreview({ media, label }: { media: MediaValue; label?: string }) {
+export function MediaPreview({
+  media,
+  label,
+  pixelated,
+}: {
+  media: MediaValue;
+  label?: string;
+  pixelated?: boolean;
+}) {
+  const style = pixelated ? { imageRendering: "pixelated" as const } : undefined;
   return (
     <div className="group relative w-full overflow-hidden border border-[color:var(--color-rule)] bg-black">
       {media.mediaType === "video" ? (
         <video
           src={media.url}
           className="nodrag block max-h-44 w-full object-contain"
+          style={style}
           controls
           muted
           loop
@@ -23,7 +33,7 @@ export function MediaPreview({ media, label }: { media: MediaValue; label?: stri
         />
       ) : (
         // eslint-disable-next-line @next/next/no-img-element -- remote provider URLs, no Image optimization wanted
-        <img src={media.url} alt={label ?? "result"} className="block max-h-44 w-full object-contain" />
+        <img src={media.url} alt={label ?? "result"} className="block max-h-44 w-full object-contain" style={style} />
       )}
       <button
         type="button"
