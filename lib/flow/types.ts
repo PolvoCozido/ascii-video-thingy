@@ -7,7 +7,8 @@ export type FlowNodeKind =
   | "upload"
   | "imageGen"
   | "videoGen"
-  | "ascii";
+  | "ascii"
+  | "convert";
 
 export type MediaValue = { url: string; mediaType: "image" | "video" };
 
@@ -30,7 +31,8 @@ export type NodeConfig =
   | { kind: "upload"; url?: string; mediaType?: "image" | "video"; label?: string }
   | ({ kind: "imageGen" } & ModelDrivenConfig)
   | ({ kind: "videoGen" } & ModelDrivenConfig)
-  | { kind: "ascii"; style: StyleState };
+  | { kind: "ascii"; style: StyleState }
+  | { kind: "convert" };
 
 export type NodeData = {
   config: NodeConfig;
@@ -44,6 +46,7 @@ export const STATIC_IO: Partial<Record<FlowNodeKind, { inputs: string[]; outputs
   text: { inputs: [], outputs: ["text"] },
   upload: { inputs: [], outputs: ["media"] },
   ascii: { inputs: ["media"], outputs: [] },
+  convert: { inputs: ["media"], outputs: ["media"] },
 };
 
 export const DEFAULT_LABEL: Record<FlowNodeKind, string> = {
@@ -53,6 +56,7 @@ export const DEFAULT_LABEL: Record<FlowNodeKind, string> = {
   imageGen: "image gen",
   videoGen: "video gen",
   ascii: "ascii",
+  convert: "webm → mp4",
 };
 
 export const DEFAULT_PROMPT_CONTEXT = `You are a senior prompt engineer for text-to-image models.

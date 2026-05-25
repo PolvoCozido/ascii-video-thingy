@@ -35,6 +35,7 @@ import { PromptNode } from "./nodes/PromptNode";
 import { UploadNode } from "./nodes/UploadNode";
 import { ProviderNode } from "./nodes/ProviderNode";
 import { AsciiNode } from "./nodes/AsciiNode";
+import { ConvertNode } from "./nodes/ConvertNode";
 import { DEFAULT_PROMPT_CONTEXT } from "@/lib/flow/types";
 
 function ImageGenNodeAdapter(props: NodeProps) {
@@ -51,6 +52,7 @@ const NODE_TYPES: NodeTypes = {
   imageGen: ImageGenNodeAdapter,
   videoGen: VideoGenNodeAdapter,
   ascii: AsciiNode,
+  convert: ConvertNode,
 };
 
 const STORAGE_KEY = "ascii-video-thingy:flow:v4";
@@ -324,6 +326,9 @@ function FlowEditorInner() {
         case "ascii":
           data = { config: { kind: "ascii", style: { ...STYLE_DEFAULTS } }, status: "idle" };
           break;
+        case "convert":
+          data = { config: { kind: "convert" }, status: "idle" };
+          break;
       }
 
       setNodes((prev) => [
@@ -383,6 +388,14 @@ function FlowEditorInner() {
           >
             [⊞ library {library.length}]
           </button>
+          <a
+            href="https://github.com/PolvoCozido/ascii-video-thingy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="border border-[color:var(--color-rule)] px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-muted)] hover:border-[color:var(--color-ink)] hover:text-[color:var(--color-ink)]"
+          >
+            [repo]
+          </a>
           <button
             type="button"
             onClick={toggle}
@@ -446,6 +459,7 @@ function AddMenu({ onAdd }: { onAdd: (kind: FlowNodeKind) => void }) {
     { kind: "imageGen", label: "image gen" },
     { kind: "videoGen", label: "video gen" },
     { kind: "ascii", label: "ascii" },
+    { kind: "convert", label: "webm → mp4" },
   ];
 
   return (

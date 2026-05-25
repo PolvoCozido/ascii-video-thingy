@@ -132,6 +132,13 @@ async function runNode(
       if (!inputUrl) throw new Error("ascii needs a media input");
       return { media: { url: inputUrl, mediaType: guessMediaType(inputUrl) } };
     }
+    case "convert": {
+      const inputUrl = inputs.media;
+      if (!inputUrl) throw new Error("convert needs a media input");
+      const { convertToMp4 } = await import("@/lib/convert/ffmpeg");
+      const mp4Url = await convertToMp4(inputUrl, undefined, signal);
+      return { media: { url: mp4Url, mediaType: "video" } };
+    }
     case "prompt":
     case "imageGen":
     case "videoGen": {
@@ -262,6 +269,6 @@ function requiredInputNames(cfg: NodeConfig): string[] {
     if (!spec) return [];
     return spec.inputs.filter((i) => i.required).map((i) => i.name);
   }
-  if (cfg.kind === "ascii") return ["media"];
+  if (cfg.kind === "ascii" || cfg.kind === "convert") return ["media"];
   return [];
 }
