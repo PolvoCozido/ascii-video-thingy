@@ -1,10 +1,27 @@
 .DS_Store
-*.mp4
-*.webm
-*.mov
-*.png
-*.jpg
-*.jpeg
 node_modules/
 .vscode/
 .idea/
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# env
+.env*.local
+.env
+
+# generated recordings (canvas exports)
+/recordings/
+*.webm
+*.mov
+*.mp4
+
+# but keep demo assets in public/
+!/public/**/*.mp4
+!/public/**/*.webm
+!/public/**/*.png
+!/public/**/*.jpg
+!/public/**/*.jpeg

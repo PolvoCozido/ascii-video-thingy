@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0a0a0a;
+  --color-panel: #0a0a0a;
+  --color-fg: #f5f5f5;
+  --color-muted: #f5f5f580;
+  --color-rule: #ffffff20;
+  --color-ink: #28c840;
+  --color-rec: #ff2a3d;
+
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+
+::selection { background: var(--color-ink); color: var(--color-bg); }
+
+/* tighter custom scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: var(--color-rule); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* scissor (cut) mode — edges become destructive on hover */
+.is-scissor,
+.is-scissor .react-flow,
+.is-scissor .react-flow__pane,
+.is-scissor .react-flow__edge {
+  cursor: crosshair;
+}
+.is-scissor .react-flow__edge-path {
+  transition: stroke 80ms ease;
+}
+.is-scissor .react-flow__edge:hover .react-flow__edge-path {
+  stroke: #ff2a3d !important;
+  stroke-width: 3 !important;
+}
+.is-scissor .react-flow__edge:hover .react-flow__edge-interaction {
+  cursor: crosshair;
+}
