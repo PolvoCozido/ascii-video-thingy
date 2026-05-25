@@ -394,5 +394,11 @@ function MiniAsciiCanvas({
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="block h-full w-full object-contain" />;
+  return (
+    <canvas
+      ref={canvasRef}
+      className="block h-full w-full object-contain"
+      style={{ imageRendering: "pixelated" }}
+    />
+  );
 }

@@ -53,10 +53,15 @@ export async function convertToMp4(
 
   try {
     await ff.writeFile("in", await fetchFile(inputUrl));
+    // High-contrast/saturated ASCII content suffers badly from default chroma
+    // subsampling + fast presets — colors mute and edges bleed. `-crf 18` is
+    // visually lossless and `-preset slow` gives the encoder time to preserve
+    // the punchy contrast we record at 12 Mbps webm.
     await ff.exec([
       "-i", "in",
       "-c:v", "libx264",
-      "-preset", "ultrafast",
+      "-preset", "slow",
+      "-crf", "18",
       "-pix_fmt", "yuv420p",
       "-c:a", "aac",
       "-movflags", "+faststart",
