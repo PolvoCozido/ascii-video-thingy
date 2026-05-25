@@ -36,6 +36,13 @@
     transition: opacity .15s; margin-top: 4px; }
   .btn:hover { opacity: 0.85; }
   .btn.is-rec { background: #ff2a3d; }
+  .btn.alt { background: transparent; color: var(--fg); border: 1px solid rgba(0,0,0,.15); }
+  .btn.alt:hover { opacity: 1; background: rgba(0,0,0,.04); }
+  #drop { position: fixed; inset: 0; background: rgba(26,44,255,.12);
+    border: 2px dashed var(--ink); z-index: 30; display: none;
+    align-items: center; justify-content: center; pointer-events: none;
+    font-size: 13px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink); }
+  #drop.on { display: flex; }
   .label-top { display: flex; justify-content: space-between; align-items: baseline; }
   .label-top span:last-child { color: var(--fg); font-variant-numeric: tabular-nums; }
   .hint { position: fixed; right: 16px; bottom: 16px; font-size: 10px; letter-spacing: .12em;
@@ -83,9 +90,12 @@
     <label style="flex:0 0 28px;text-align:right;color:var(--muted)">bg</label>
     <input id="bg"  type="color" value="#000000" />
   </div>
+  <button id="loadBtn" class="btn alt" type="button">↑ Load media</button>
   <button id="recBtn" class="btn" type="button">⏺ Record video</button>
 </div>
-<div class="hint">space · pause &nbsp;·&nbsp; s · record</div>
+<input id="file" type="file" accept="video/*,image/*" hidden />
+<div id="drop">Drop video or image</div>
+<div class="hint">space · pause &nbsp;·&nbsp; s · record &nbsp;·&nbsp; drop file</div>
 <div id="rec"><span class="dot"></span><span id="recTime">REC 00:00</span></div>
 
 <script>
@@ -287,6 +297,51 @@
   $('bg').oninput  = e => { state.bg  = hexToRgb(e.target.value); syncCss(); persist(); };
   syncCss();
 
+  // ---- media loading ----
+  const fileInput = document.getElementById('file');
+  const dropEl    = document.getElementById('drop');
+  const img       = new Image();
+  img.crossOrigin = 'anonymous';
+  let mode = 'video';        // 'video' | 'image'
+  let imgPending = false;    // image loaded, needs one texture upload
+  let currentUrl = null;     // blob URL to revoke when replaced
+
+  function loadMedia(file) {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const prev = currentUrl; currentUrl = url;
+    if (file.type.startsWith('image/')) {
+      mode = 'image';
+      img.onload = () => { imgPending = true; };
+      img.src = url;
+      video.pause();
+    } else {
+      mode = 'video';
+      video.src = url;
+      video.play().catch(() => {});
+    }
+    if (prev) setTimeout(() => URL.revokeObjectURL(prev), 1000);
+  }
+  document.getElementById('loadBtn').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', e => loadMedia(e.target.files[0]));
+
+  let dragDepth = 0;
+  document.addEventListener('dragenter', e => {
+    if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes('Files')) return;
+    e.preventDefault(); dragDepth++; dropEl.classList.add('on');
+  });
+  document.addEventListener('dragover', e => { if (dragDepth > 0) e.preventDefault(); });
+  document.addEventListener('dragleave', e => {
+    if (dragDepth > 0 && --dragDepth === 0) dropEl.classList.remove('on');
+  });
+  document.addEventListener('drop', e => {
+    if (!e.dataTransfer) return;
+    e.preventDefault();
+    dragDepth = 0; dropEl.classList.remove('on');
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadMedia(f);
+  });
+
   // ---- recording ----
   const recBadge = document.getElementById('rec');
   const recTime  = document.getElementById('recTime');
@@ -351,6 +406,7 @@
 
   function recordOneLoop() {
     if (recorder && recorder.state === 'recording') { toggleRec(); return; }
+    if (mode === 'image') { toggleRec({ duration: 6 }); return; }
     const dur = (isFinite(video.duration) && video.duration > 0) ? video.duration : 6;
     try { video.currentTime = 0; } catch {}
     video.play().catch(() => {});
@@ -381,13 +437,20 @@
   const t0 = performance.now();
   function loop(){
     const t = (performance.now() - t0) / 1000;
-    if (video.readyState >= 2) {
+    if (mode === 'video' && video.readyState >= 2) {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
+    } else if (mode === 'image' && imgPending) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
+      imgPending = false;
     }
+    const srcW = mode === 'image' ? img.naturalWidth  : video.videoWidth;
+    const srcH = mode === 'image' ? img.naturalHeight : video.videoHeight;
     gl.uniform2f(u.res, canvas.width, canvas.height);
-    gl.uniform2f(u.vid, video.videoWidth || 720, video.videoHeight || 900);
+    gl.uniform2f(u.vid, srcW || 720, srcH || 900);
     gl.uniform1f(u.pixel, state.pixel * (window.devicePixelRatio || 1));
     gl.uniform1f(u.black, state.black);
     gl.uniform1f(u.white, state.white);
