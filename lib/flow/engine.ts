@@ -130,7 +130,21 @@ async function runNode(
     case "ascii": {
       const inputUrl = inputs.media;
       if (!inputUrl) throw new Error("ascii needs a media input");
-      return { media: { url: inputUrl, mediaType: guessMediaType(inputUrl) } };
+      const inType = guessMediaType(inputUrl);
+      const { renderAsciiSnapshotBlob, recordAsciiVideoLoop } = await import("@/lib/ascii/export");
+      if (inType === "image") {
+        const blob = await renderAsciiSnapshotBlob(inputUrl, "image", cfg.style);
+        return { media: { url: URL.createObjectURL(blob), mediaType: "image" } };
+      }
+      const ctrl = recordAsciiVideoLoop(inputUrl, cfg.style);
+      const onAbort = () => ctrl.stop();
+      signal?.addEventListener("abort", onAbort);
+      try {
+        const blob = await ctrl.done;
+        return { media: { url: URL.createObjectURL(blob), mediaType: "video" } };
+      } finally {
+        signal?.removeEventListener("abort", onAbort);
+      }
     }
     case "convert": {
       const inputUrl = inputs.media;

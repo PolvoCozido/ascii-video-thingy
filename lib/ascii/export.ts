@@ -77,7 +77,7 @@ function uploadFrame(
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, source);
 }
 
-function triggerDownload(blob: Blob, filename: string) {
+export function triggerDownload(blob: Blob, filename: string) {
   const a = document.createElement("a");
   a.download = filename;
   a.href = URL.createObjectURL(blob);
@@ -174,14 +174,14 @@ function pickMime(): string {
 }
 
 export type VideoRecordController = {
-  /** Resolves when the file has been recorded and the download triggered. */
-  done: Promise<void>;
+  /** Resolves with the recorded blob (caller decides what to do with it). */
+  done: Promise<Blob>;
   /** Stop early (otherwise auto-stops after one loop). */
   stop: () => void;
 };
 
 /**
- * Record exactly one loop of a video through the shader and download it.
+ * Record exactly one loop of a video through the shader.
  * `onTick` reports elapsed seconds so the UI can show a REC timer.
  */
 export function recordAsciiVideoLoop(
@@ -197,7 +197,7 @@ export function recordAsciiVideoLoop(
   }
 
   let stopFn = () => {};
-  const done = new Promise<void>((resolve, reject) => {
+  const done = new Promise<Blob>((resolve, reject) => {
     const video = document.createElement("video");
     video.muted = true;
     video.playsInline = true;
@@ -250,8 +250,7 @@ export function recordAsciiVideoLoop(
         const blob = new Blob(chunks, {
           type: isMp4 ? "video/mp4" : "video/webm",
         });
-        triggerDownload(blob, `ascii-${Date.now()}.${isMp4 ? "mp4" : "webm"}`);
-        resolve();
+        resolve(blob);
       };
 
       stopFn = () => {

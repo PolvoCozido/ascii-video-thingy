@@ -1,9 +1,10 @@
 "use client";
 
 import type { NodeProps } from "@xyflow/react";
+import { useNodeConnections, useNodesData } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FRAG_SRC, VERT_SRC, getUniformLocs, linkProgram, setStyleUniforms } from "@/lib/shader";
-import { downloadAsciiImage, recordAsciiVideoLoop, renderAsciiSnapshotBlob, type VideoRecordController } from "@/lib/ascii/export";
+import { downloadAsciiImage, recordAsciiVideoLoop, renderAsciiSnapshotBlob, triggerDownload, type VideoRecordController } from "@/lib/ascii/export";
 import { STYLE_DEFAULTS, type StyleState } from "@/lib/style";
 import { copyImageBlob } from "@/lib/clipboard";
 import { useNodeUpdate } from "@/lib/flow/useNodeUpdate";
@@ -18,8 +19,15 @@ export function AsciiNode(props: NodeProps) {
   const update = useNodeUpdate(id);
   const [expanded, setExpanded] = useState(false);
 
-  const sourceUrl = d.output?.media?.url;
-  const sourceType = d.output?.media?.mediaType;
+  // Live preview reads the upstream source (so the shader can re-render
+  // continuously with current style settings). The node's own output is the
+  // one-shot rendered result that downstream nodes (e.g. convert) consume.
+  const incoming = useNodeConnections({ id, handleType: "target", handleId: "media" });
+  const upstreamId = incoming[0]?.source;
+  const upstreamNode = useNodesData(upstreamId ?? "");
+  const upstreamMedia = (upstreamNode?.data as unknown as NodeData | undefined)?.output?.media;
+  const sourceUrl = upstreamMedia?.url;
+  const sourceType = upstreamMedia?.mediaType;
   const download = useAsciiDownload(sourceUrl, sourceType ?? "image", cfg.style);
 
   return (
@@ -31,7 +39,7 @@ export function AsciiNode(props: NodeProps) {
         selected={selected}
         width={260}
         inputs={[{ name: "media", type: "image" }]}
-        outputs={[]}
+        outputs={[{ name: "media", type: "video" }]}
       >
         <div className="flex flex-col gap-1.5">
           <div className="relative aspect-video w-full overflow-hidden border border-[color:var(--color-rule)] bg-black">
@@ -111,6 +119,10 @@ function useAsciiDownload(url: string | undefined, mediaType: "image" | "video",
     const ctrl = recordAsciiVideoLoop(url, styleRef.current, setElapsed);
     ctrlRef.current = ctrl;
     ctrl.done
+      .then((blob) => {
+        const ext = blob.type.startsWith("video/mp4") ? "mp4" : "webm";
+        triggerDownload(blob, `ascii-${Date.now()}.${ext}`);
+      })
       .catch((err) => console.error("video export failed", err))
       .finally(() => {
         setRecording(false);

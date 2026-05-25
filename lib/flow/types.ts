@@ -45,7 +45,7 @@ export type NodeData = {
 export const STATIC_IO: Partial<Record<FlowNodeKind, { inputs: string[]; outputs: string[] }>> = {
   text: { inputs: [], outputs: ["text"] },
   upload: { inputs: [], outputs: ["media"] },
-  ascii: { inputs: ["media"], outputs: [] },
+  ascii: { inputs: ["media"], outputs: ["media"] },
   convert: { inputs: ["media"], outputs: ["media"] },
 };
 
