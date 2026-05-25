@@ -1,0 +1,10 @@
+.DS_Store
+*.mp4
+*.webm
+*.mov
+*.png
+*.jpg
+*.jpeg
+node_modules/
+.vscode/
+.idea/

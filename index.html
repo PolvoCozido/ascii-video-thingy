@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ascii video thingy</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root {
+    --bg: #f2f1ec;
+    --ink: #1a2cff;
+    --fg: #1a1a1a;
+    --muted: #8a8a8a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  .panel {
+    position: fixed; left: 16px; bottom: 16px; z-index: 10;
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 12px 14px; background: rgba(255,255,255,.65);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(0,0,0,.08); border-radius: 8px;
+    font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+    min-width: 220px;
+  }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row label { color: var(--muted); flex: 0 0 84px; }
+  .row input[type=range] { flex: 1; accent-color: var(--ink); }
+  .row input[type=color] { width: 28px; height: 22px; padding: 0; border: 1px solid rgba(0,0,0,.15); background: transparent; border-radius: 4px; }
+  .row select { flex: 1; font: inherit; text-transform: uppercase; letter-spacing: .04em;
+    background: transparent; border: 1px solid rgba(0,0,0,.15); border-radius: 4px; padding: 3px 6px; }
+  .btn { font: inherit; text-transform: uppercase; letter-spacing: .08em;
+    padding: 8px 12px; border-radius: 6px; cursor: pointer;
+    background: var(--ink); color: #fff; border: none;
+    transition: opacity .15s; margin-top: 4px; }
+  .btn:hover { opacity: 0.85; }
+  .btn.is-rec { background: #ff2a3d; }
+  .label-top { display: flex; justify-content: space-between; align-items: baseline; }
+  .label-top span:last-child { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .hint { position: fixed; right: 16px; bottom: 16px; font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); }
+  #rec { position: fixed; top: 16px; right: 16px; display: none; align-items: center; gap: 8px;
+    padding: 6px 10px; background: rgba(0,0,0,.6); color: #fff; border-radius: 999px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px;
+    letter-spacing: .12em; text-transform: uppercase; z-index: 20; }
+  #rec .dot { width: 8px; height: 8px; border-radius: 50%; background: #ff2a3d; box-shadow: 0 0 8px #ff2a3d;
+    animation: blink 1s infinite; }
+  @keyframes blink { 0%, 60% { opacity: 1; } 70%, 100% { opacity: 0.25; } }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<video id="vid" src="sample.mp4" muted loop playsinline autoplay crossorigin="anonymous"
+       style="position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;"></video>
+
+<div class="panel">
+  <div class="row"><label>pixel</label>
+    <input id="px" type="range" min="1" max="10" step="1" value="1" />
+    <span id="pxv" style="width:18px;text-align:right">1</span></div>
+  <div class="row"><label>black</label>
+    <input id="bk" type="range" min="0" max="0.7" step="0.01" value="0.15" />
+    <span id="bkv" style="width:32px;text-align:right">0.15</span></div>
+  <div class="row"><label>white</label>
+    <input id="wh" type="range" min="0.2" max="1.5" step="0.01" value="1.30" />
+    <span id="whv" style="width:32px;text-align:right">1.30</span></div>
+  <div class="row"><label>density</label>
+    <input id="dn" type="range" min="0.1" max="1.0" step="0.01" value="1.00" />
+    <span id="dnv" style="width:32px;text-align:right">1.00</span></div>
+  <div class="row"><label>gamma</label>
+    <input id="gm" type="range" min="0.3" max="2.5" step="0.05" value="2.30" />
+    <span id="gmv" style="width:32px;text-align:right">2.30</span></div>
+  <div class="row"><label>shimmer</label>
+    <input id="sh" type="range" min="0" max="2" step="0.05" value="0.85" />
+    <span id="shv" style="width:32px;text-align:right">0.85</span></div>
+  <div class="row"><label>drift</label>
+    <input id="df" type="range" min="0" max="3" step="0.05" value="0.80" />
+    <span id="dfv" style="width:32px;text-align:right">0.80</span></div>
+  <div class="row"><label>fit</label>
+    <select id="fit"><option value="contain">contain</option><option value="cover">cover</option></select></div>
+  <div class="row"><label>ink</label>
+    <input id="ink" type="color" value="#28c840" />
+    <label style="flex:0 0 28px;text-align:right;color:var(--muted)">bg</label>
+    <input id="bg"  type="color" value="#000000" />
+  </div>
+  <button id="recBtn" class="btn" type="button">⏺ Record video</button>
+</div>
+<div class="hint">space · pause &nbsp;·&nbsp; s · record</div>
+<div id="rec"><span class="dot"></span><span id="recTime">REC 00:00</span></div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('gl');
+  const video  = document.getElementById('vid');
+  const gl = canvas.getContext('webgl', { antialias: false, preserveDrawingBuffer: true });
+  if (!gl) { document.body.innerHTML = '<p style="padding:24px">WebGL not available.</p>'; return; }
+
+  const vs = `
+    attribute vec2 a;
+    varying vec2 vUv;
+    void main(){ vUv = a * 0.5 + 0.5; gl_Position = vec4(a, 0.0, 1.0); }
+  `;
+
+  const fs = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uTex;
+    uniform vec2  uRes;
+    uniform vec2  uVid;
+    uniform float uPixel;
+    uniform float uBlack;
+    uniform float uWhite;
+    uniform float uGamma;
+    uniform float uDensity;
+    uniform float uTime;
+    uniform float uShimmer;
+    uniform float uDrift;
+    uniform vec3  uInk;
+    uniform vec3  uBg;
+    uniform int   uFit;
+
+    float bayer2(vec2 a){ a = floor(a); return fract(a.x * 0.5 + a.y * a.y * 0.75); }
+    float bayer4(vec2 a){ return bayer2(0.5 * a) * 0.25 + bayer2(a); }
+    float bayer8(vec2 a){ return bayer4(0.5 * a) * 0.25 + bayer2(a); }
+
+    void main(){
+      vec2 fragPx = gl_FragCoord.xy;
+      vec2 cell   = floor(fragPx / uPixel);
+      vec2 px     = cell * uPixel + 0.5 * uPixel;
+
+      vec2 uv = px / uRes;
+      uv.y = 1.0 - uv.y;
+
+      // soft float: slow vertical bob + tiny horizontal sway
+      vec2 drift = vec2(
+        sin(uTime * 0.27) * 0.004,
+        sin(uTime * 0.41) * 0.012 + cos(uTime * 0.18) * 0.006
+      ) * uDrift;
+      uv -= drift;
+
+      float cAR = uRes.x / uRes.y;
+      float vAR = uVid.x / uVid.y;
+      vec2  vUvOut = uv;
+      bool  inside = true;
+      if (uFit == 0) {
+        if (vAR > cAR) {
+          float scale = cAR / vAR;
+          float off = (1.0 - scale) * 0.5;
+          if (uv.y < off || uv.y > 1.0 - off) inside = false;
+          vUvOut.y = (uv.y - off) / scale;
+        } else {
+          float scale = vAR / cAR;
+          float off = (1.0 - scale) * 0.5;
+          if (uv.x < off || uv.x > 1.0 - off) inside = false;
+          vUvOut.x = (uv.x - off) / scale;
+        }
+      } else {
+        if (vAR > cAR) {
+          float scale = vAR / cAR;
+          float off = (1.0 - 1.0/scale) * 0.5;
+          vUvOut.x = off + uv.x / scale;
+        } else {
+          float scale = cAR / vAR;
+          float off = (1.0 - 1.0/scale) * 0.5;
+          vUvOut.y = off + uv.y / scale;
+        }
+      }
+
+      vec3 col = inside ? texture2D(uTex, vUvOut).rgb : vec3(0.0);
+
+      float lum = dot(col, vec3(0.299, 0.587, 0.114));
+      // levels: map [uBlack, uWhite] → [0, 1], crush below black, blow out above white
+      lum = (lum - uBlack) / max(1e-4, uWhite - uBlack);
+      lum = clamp(lum, 0.0, 1.0);
+      // gamma < 1 brightens midtones, > 1 darkens them
+      lum = pow(lum, uGamma);
+      // density caps the maximum dot coverage so even the brightest spot stays halftone, not solid
+      lum *= uDensity;
+
+      // shimmer: shift the bayer lattice in discrete steps so the threshold pattern animates
+      vec2 jit = floor(vec2(uTime * 6.0 * uShimmer, uTime * 4.7 * uShimmer)) * vec2(7.0, 13.0);
+      float t = bayer8(cell + jit);
+      float ink = step(t, lum) * step(0.001, lum);
+
+      gl_FragColor = vec4(mix(uBg, uInk, ink), 1.0);
+    }
+  `;
+
+  function compile(type, src){
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      console.error(gl.getShaderInfoLog(sh)); throw new Error('shader');
+    }
+    return sh;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    console.error(gl.getProgramInfoLog(prog)); throw new Error('link');
+  }
+  gl.useProgram(prog);
+
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+  const aLoc = gl.getAttribLocation(prog, 'a');
+  gl.enableVertexAttribArray(aLoc);
+  gl.vertexAttribPointer(aLoc, 2, gl.FLOAT, false, 0, 0);
+
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  const u = {
+    tex:      gl.getUniformLocation(prog, 'uTex'),
+    res:      gl.getUniformLocation(prog, 'uRes'),
+    vid:      gl.getUniformLocation(prog, 'uVid'),
+    pixel:    gl.getUniformLocation(prog, 'uPixel'),
+    black:    gl.getUniformLocation(prog, 'uBlack'),
+    white:    gl.getUniformLocation(prog, 'uWhite'),
+    gamma:    gl.getUniformLocation(prog, 'uGamma'),
+    density:  gl.getUniformLocation(prog, 'uDensity'),
+    time:     gl.getUniformLocation(prog, 'uTime'),
+    shimmer:  gl.getUniformLocation(prog, 'uShimmer'),
+    drift:    gl.getUniformLocation(prog, 'uDrift'),
+    ink:      gl.getUniformLocation(prog, 'uInk'),
+    bg:       gl.getUniformLocation(prog, 'uBg'),
+    fit:      gl.getUniformLocation(prog, 'uFit'),
+  };
+  gl.uniform1i(u.tex, 0);
+
+  const $ = id => document.getElementById(id);
+  const DEFAULTS = { pixel: 1, black: 0.15, white: 1.30, gamma: 2.30, density: 1.00, shimmer: 0.85, drift: 0.80, fit: 0, ink: '#28c840', bg: '#000000' };
+  const STORAGE_KEY = 'ascii-video-thingy-config';
+  function loadSaved() {
+    try { const o = JSON.parse(localStorage.getItem(STORAGE_KEY)); return (o && typeof o === 'object') ? o : null; }
+    catch { return null; }
+  }
+  function hexToRgb(h){ const n = parseInt(h.slice(1), 16); return [((n>>16)&255)/255, ((n>>8)&255)/255, (n&255)/255]; }
+  const cfg = Object.assign({}, DEFAULTS, loadSaved() || {});
+  const state = {
+    pixel: cfg.pixel, black: cfg.black, white: cfg.white, gamma: cfg.gamma,
+    density: cfg.density, shimmer: cfg.shimmer, drift: cfg.drift, fit: cfg.fit,
+    ink: hexToRgb(cfg.ink), bg: hexToRgb(cfg.bg),
+  };
+
+  function persist() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      pixel: state.pixel, black: state.black, white: state.white, gamma: state.gamma,
+      density: state.density, shimmer: state.shimmer, drift: state.drift, fit: state.fit,
+      ink: $('ink').value, bg: $('bg').value,
+    }));
+  }
+  function syncCss(){
+    document.documentElement.style.setProperty('--ink', $('ink').value);
+    document.documentElement.style.setProperty('--bg',  $('bg').value);
+    document.body.style.background = $('bg').value;
+  }
+
+  // Apply saved values to inputs so sliders/colors reflect cfg on load
+  $('px').value = cfg.pixel;    $('pxv').textContent = cfg.pixel;
+  $('bk').value = cfg.black;    $('bkv').textContent = cfg.black.toFixed(2);
+  $('wh').value = cfg.white;    $('whv').textContent = cfg.white.toFixed(2);
+  $('dn').value = cfg.density;  $('dnv').textContent = cfg.density.toFixed(2);
+  $('gm').value = cfg.gamma;    $('gmv').textContent = cfg.gamma.toFixed(2);
+  $('sh').value = cfg.shimmer;  $('shv').textContent = cfg.shimmer.toFixed(2);
+  $('df').value = cfg.drift;    $('dfv').textContent = cfg.drift.toFixed(2);
+  $('fit').value = cfg.fit ? 'cover' : 'contain';
+  $('ink').value = cfg.ink;
+  $('bg').value  = cfg.bg;
+
+  $('px').oninput = e => { state.pixel = +e.target.value; $('pxv').textContent = e.target.value; persist(); };
+  $('bk').oninput = e => { state.black = +e.target.value; $('bkv').textContent = (+e.target.value).toFixed(2); persist(); };
+  $('wh').oninput = e => { state.white = +e.target.value; $('whv').textContent = (+e.target.value).toFixed(2); persist(); };
+  $('dn').oninput = e => { state.density = +e.target.value; $('dnv').textContent = (+e.target.value).toFixed(2); persist(); };
+  $('gm').oninput = e => { state.gamma = +e.target.value; $('gmv').textContent = (+e.target.value).toFixed(2); persist(); };
+  $('sh').oninput = e => { state.shimmer = +e.target.value; $('shv').textContent = (+e.target.value).toFixed(2); persist(); };
+  $('df').oninput = e => { state.drift = +e.target.value; $('dfv').textContent = (+e.target.value).toFixed(2); persist(); };
+  $('fit').onchange = e => { state.fit = e.target.value === 'cover' ? 1 : 0; persist(); };
+  $('ink').oninput = e => { state.ink = hexToRgb(e.target.value); syncCss(); persist(); };
+  $('bg').oninput  = e => { state.bg  = hexToRgb(e.target.value); syncCss(); persist(); };
+  syncCss();
+
+  // ---- recording ----
+  const recBadge = document.getElementById('rec');
+  const recTime  = document.getElementById('recTime');
+  const recBtn   = document.getElementById('recBtn');
+  let recorder = null, recChunks = [], recStart = 0, recTimer = 0, recAutoStop = 0;
+  function setRecUI(on) {
+    recBtn.textContent = on ? '⏹ Stop' : '⏺ Record video';
+    recBtn.classList.toggle('is-rec', on);
+    recBadge.style.display = on ? 'flex' : 'none';
+  }
+  function pickMime() {
+    const cands = [
+      'video/mp4;codecs=avc1.42E01E',  // H.264 baseline — Safari & recent Chrome
+      'video/mp4;codecs=avc1',
+      'video/mp4',
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm',
+    ];
+    return cands.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+  }
+  function fmt(s) { const m = Math.floor(s/60), x = Math.floor(s%60); return `REC ${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`; }
+  // opts: { duration: seconds } — if set, auto-stops after that long
+  function toggleRec(opts) {
+    if (!window.MediaRecorder) { alert('MediaRecorder not supported in this browser.'); return; }
+    if (recorder && recorder.state === 'recording') {
+      clearTimeout(recAutoStop);
+      recorder.stop();
+      return;
+    }
+    const stream = canvas.captureStream(60);
+    const type = pickMime();
+    try {
+      recorder = new MediaRecorder(stream, type ? { mimeType: type, videoBitsPerSecond: 12_000_000 } : {});
+    } catch (err) { alert('Could not start recorder: ' + err.message); return; }
+    recChunks = [];
+    recorder.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
+    recorder.onstop = () => {
+      clearInterval(recTimer);
+      clearTimeout(recAutoStop);
+      setRecUI(false);
+      const mime = recorder.mimeType || 'video/webm';
+      const isMp4 = mime.startsWith('video/mp4');
+      const blob = new Blob(recChunks, { type: isMp4 ? 'video/mp4' : 'video/webm' });
+      const a = document.createElement('a');
+      a.download = `ascii-${Date.now()}.${isMp4 ? 'mp4' : 'webm'}`;
+      a.href = URL.createObjectURL(blob);
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    };
+    recorder.start(100);
+    recStart = performance.now();
+    setRecUI(true);
+    recTime.textContent = 'REC 00:00';
+    recTimer = setInterval(() => {
+      recTime.textContent = fmt((performance.now() - recStart) / 1000);
+    }, 250);
+    if (opts && opts.duration > 0) {
+      recAutoStop = setTimeout(() => { if (recorder && recorder.state === 'recording') recorder.stop(); }, opts.duration * 1000);
+    }
+  }
+
+  function recordOneLoop() {
+    if (recorder && recorder.state === 'recording') { toggleRec(); return; }
+    const dur = (isFinite(video.duration) && video.duration > 0) ? video.duration : 6;
+    try { video.currentTime = 0; } catch {}
+    video.play().catch(() => {});
+    // tiny delay so the seeked frame is the actual start
+    setTimeout(() => toggleRec({ duration: dur + 0.1 }), 80);
+  }
+  recBtn.addEventListener('click', recordOneLoop);
+
+  window.addEventListener('keydown', e => {
+    if (e.target.matches('input, select, textarea')) return;
+    if (e.code === 'Space') { e.preventDefault(); video.paused ? video.play() : video.pause(); }
+    if (e.key === 's' || e.key === 'S') { e.preventDefault(); toggleRec(); }
+  });
+
+  function resize(){
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width  = Math.floor(window.innerWidth  * dpr);
+    canvas.height = Math.floor(window.innerHeight * dpr);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const tryPlay = () => video.play().catch(() => {});
+  video.addEventListener('canplay', tryPlay);
+  document.addEventListener('click', tryPlay, { once: true });
+
+  const t0 = performance.now();
+  function loop(){
+    const t = (performance.now() - t0) / 1000;
+    if (video.readyState >= 2) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
+    }
+    gl.uniform2f(u.res, canvas.width, canvas.height);
+    gl.uniform2f(u.vid, video.videoWidth || 720, video.videoHeight || 900);
+    gl.uniform1f(u.pixel, state.pixel * (window.devicePixelRatio || 1));
+    gl.uniform1f(u.black, state.black);
+    gl.uniform1f(u.white, state.white);
+    gl.uniform1f(u.gamma, state.gamma);
+    gl.uniform1f(u.density, state.density);
+    gl.uniform1f(u.time, t);
+    gl.uniform1f(u.shimmer, state.shimmer);
+    gl.uniform1f(u.drift, state.drift);
+    gl.uniform3fv(u.ink, state.ink);
+    gl.uniform3fv(u.bg,  state.bg);
+    gl.uniform1i(u.fit, state.fit);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    requestAnimationFrame(loop);
+  }
+  loop();
+})();
+</script>
+</body>
+</html>
